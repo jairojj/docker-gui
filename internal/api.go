@@ -2,10 +2,14 @@ package internal
 
 import (
 	"context"
+	"io"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/wailsapp/wails"
 	"github.com/wailsapp/wails/lib/logger"
 )
@@ -55,4 +59,58 @@ func (api *Api) GetContainers() []types.Container {
 	}
 
 	return containers
+}
+
+func (api *Api) RunContainer(imageName string) (string, error) {
+	ctx := context.Background()
+
+	resp, err := api.cli.ContainerCreate(ctx, &container.Config{
+		Image: imageName,
+		Tty:   true,
+	}, nil, nil, nil, "")
+	if err != nil {
+		api.logger.Error(err.Error())
+		return "", err
+	}
+
+	if err := api.cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+		api.logger.Error(err.Error())
+		return "", err
+	}
+
+	return resp.ID, nil
+}
+
+func (api *Api) StopContainer(containerId string) error {
+	ctx := context.Background()
+
+	err := api.cli.ContainerStop(ctx, containerId, nil)
+	if err != nil {
+		api.logger.Error(err.Error())
+		return err
+	}
+
+	return nil
+}
+
+func (api *Api) ContainerLogs(containerId string) (string, error) {
+	ctx := context.Background()
+
+	out, err := api.cli.ContainerLogs(ctx, containerId, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
+	if err != nil {
+		api.logger.Error(err.Error())
+		return "", err
+	}
+
+	buf := new(strings.Builder)
+	_, err = stdcopy.StdCopy(buf, nil, out)
+	if err != nil {
+		_, err = io.Copy(buf, out)
+		if err != nil {
+			api.logger.Error(err.Error())
+			return "", err
+		}
+	}
+
+	return buf.String(), nil
 }

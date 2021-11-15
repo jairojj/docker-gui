@@ -1,6 +1,7 @@
 <script>
 	import Containers from "./components/Containers.svelte";
 	import ImagesList from "./components/ImagesList.svelte";
+	import Modal from "svelte-simple-modal";
 </script>
 
 <main>
@@ -9,7 +10,9 @@
 			<h1>Images</h1>
 			<ImagesList />
 			<hr />
-			<Containers />
+			<Modal>
+				<Containers />
+			</Modal>
 		</header>
 	</div>
 </main>
