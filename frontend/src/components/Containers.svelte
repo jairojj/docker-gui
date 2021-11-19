@@ -2,11 +2,16 @@
   import { each } from "svelte/internal";
   import { getContext } from "svelte";
   import Container from "./Container.svelte";
+  import ContainerAttached from "./ContainerAttached.svelte";
 
   const { open } = getContext("simple-modal");
 
   let containers = [];
-  wails.Events.On("containerUpdate", (data) => (containers = data));
+  // wails.Events.On("containerUpdate", (data) => (containers = data));
+
+  window.backend.Api.GetContainers().then((data) => {
+    containers = data;
+  });
 
   function stopContainer(containerId) {
     window.backend.Api.StopContainer(containerId).then((result) => {});
@@ -45,6 +50,21 @@
             )}
           >
             Show Logs
+          </button>
+          <!-- svelte-ignore missing-declaration -->
+          <button
+            on:click={open(
+              ContainerAttached,
+              { container: container },
+              { styleWindow: { width: "57rem" } },
+              {
+                onClose: () => {
+                  wails.Events.Emit("container:attach:deAttach");
+                },
+              }
+            )}
+          >
+            Attach Shell
           </button>
         </td>
       </tr>

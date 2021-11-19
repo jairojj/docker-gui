@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -31,12 +32,12 @@ func (api *Api) WailsInit(runtime *wails.Runtime) error {
 
 	api.cli = cli
 
-	ticker := time.NewTicker(time.Second)
-	go func() {
-		for range ticker.C {
-			runtime.Events.Emit("containerUpdate", api.GetContainers())
-		}
-	}()
+	// ticker := time.NewTicker(time.Second)
+	// go func() {
+	// 	for range ticker.C {
+	// 		runtime.Events.Emit("containerUpdate", api.GetContainers())
+	// 	}
+	// }()
 	return nil
 }
 
@@ -162,6 +163,66 @@ func (api *Api) ListenForContainerLogs(containerId string) {
 		if lastLogTimeStamp != lastSentLogTimeStamp && lastLogTimeStamp != "" {
 			lastSentLogTimeStamp = lastLogTimeStamp
 			api.runtime.Events.Emit("container:log:new", logs)
+		}
+	}
+}
+
+func (api *Api) AttachToContainerShell(containerId string) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	inputs := make(chan string)
+
+	api.runtime.Events.On("container:attach:input", func(params ...interface{}) {
+		inputs <- params[0].(string)
+	})
+
+	api.runtime.Events.On("container:attach:deAttach", func(params ...interface{}) {
+		api.logger.Errorf("DEATTACHING FROM CONTAINER")
+		cancel()
+	})
+
+	response, err := api.cli.ContainerExecCreate(ctx, containerId, types.ExecConfig{Tty: true, AttachStdin: true, AttachStdout: true, AttachStderr: true, Cmd: []string{"bash"}})
+	if err != nil {
+		api.logger.Errorf("Could not create exec to container shell, error: %e", err.Error())
+		return
+	}
+
+	out, err := api.cli.ContainerExecAttach(ctx, response.ID, types.ExecStartCheck{Tty: true})
+	if err != nil {
+		api.logger.Errorf("Could not attach to container shell, error: %e", err.Error())
+		return
+	}
+	defer out.Close()
+
+	go io.Copy(os.Stdout, out.Reader)
+
+	go func() {
+		for {
+			execStatus, err := api.cli.ContainerExecInspect(ctx, response.ID)
+			if err != nil {
+				api.logger.Errorf("Could not inspect container shell, error: %e", err.Error())
+				cancel()
+				return
+			}
+
+			if !execStatus.Running {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case input := <-inputs:
+			api.logger.Debugf("Sending input: %s", input)
+			_, err := out.Conn.Write(append([]byte(input), '\n'))
+			if err != nil {
+				api.logger.Error(err.Error())
+			}
+		case <-ctx.Done():
+			api.logger.Errorf("DEATTACHING FROM CONTAINER: %e", ctx.Err().Error())
+			return
 		}
 	}
 }
