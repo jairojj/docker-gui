@@ -2,8 +2,10 @@
   export let container;
   let logs = null;
 
-  window.backend.Api.ContainerLogs(container.Id).then((result) => {
-    logs = result;
+  window.backend.Api.ListenForContainerLogs(container.Id);
+
+  wails.Events.On("container:log:new", (data) => {
+    logs = data;
   });
 </script>
 

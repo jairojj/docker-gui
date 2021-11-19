@@ -31,11 +31,17 @@
         <td>{container.Id}</td>
         <td>
           <button on:click={stopContainer(container.Id)}> Stop </button>
+          <!-- svelte-ignore missing-declaration -->
           <button
             on:click={open(
               Container,
               { container: container },
-              { styleWindow: { width: "57rem" } }
+              { styleWindow: { width: "57rem" } },
+              {
+                onClose: () => {
+                  wails.Events.Emit("container:log:stop");
+                },
+              }
             )}
           >
             Show Logs

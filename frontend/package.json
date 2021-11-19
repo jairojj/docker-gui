@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "sirv-cli": "^1.0.0",
-	  "@wailsapp/runtime": "^1.0.10",
-	  "svelte-simple-modal": "^0.6.0"
+    "@wailsapp/runtime": "^1.0.10",
+    "svelte-simple-modal": "^0.6.0"
   }
 }

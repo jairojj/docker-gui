@@ -31,10 +31,10 @@ func (api *Api) WailsInit(runtime *wails.Runtime) error {
 
 	api.cli = cli
 
+	ticker := time.NewTicker(time.Second)
 	go func() {
-		for {
+		for range ticker.C {
 			runtime.Events.Emit("containerUpdate", api.GetContainers())
-			time.Sleep(1 * time.Second)
 		}
 	}()
 	return nil
@@ -93,18 +93,20 @@ func (api *Api) StopContainer(containerId string) error {
 	return nil
 }
 
-func (api *Api) ContainerLogs(containerId string) (string, error) {
+func (api *Api) containerLogs(containerId string) (string, error) {
 	ctx := context.Background()
 
-	out, err := api.cli.ContainerLogs(ctx, containerId, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
+	out, err := api.cli.ContainerLogs(ctx, containerId, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Timestamps: true})
 	if err != nil {
 		api.logger.Error(err.Error())
 		return "", err
 	}
 
 	buf := new(strings.Builder)
-	_, err = stdcopy.StdCopy(buf, nil, out)
+	_, err = stdcopy.StdCopy(buf, buf, out)
 	if err != nil {
+		api.logger.Errorf("Could not use stdCopy to get the logs streams, will try to use io.Copy, error: %e", err.Error())
+
 		_, err = io.Copy(buf, out)
 		if err != nil {
 			api.logger.Error(err.Error())
@@ -113,4 +115,53 @@ func (api *Api) ContainerLogs(containerId string) (string, error) {
 	}
 
 	return buf.String(), nil
+}
+
+func getLastLogTimeStamp(logs string) string {
+	lastLine := ""
+	lines := strings.Split(logs, "\n")
+	if len(lines) > 0 {
+		if lines[len(lines)-1] == "" && len(lines) > 1 {
+			// Last line is null, so we need to return the second last line
+			lastLine = lines[len(lines)-2]
+		} else {
+			lastLine = lines[len(lines)-1]
+		}
+
+	}
+
+	if lastLine != "" && len(lastLine) >= 30 {
+		return lastLine[:30]
+	}
+
+	return ""
+}
+
+func (api *Api) ListenForContainerLogs(containerId string) {
+	ticker := time.NewTicker(time.Second)
+
+	api.runtime.Events.On("container:log:stop", func(params ...interface{}) {
+		ticker.Stop()
+	})
+
+	lastLogTimeStamp := ""
+	lastSentLogTimeStamp := ""
+
+	for range ticker.C {
+		logs, err := api.containerLogs(containerId)
+		if err != nil {
+			api.logger.Error(err.Error())
+			continue
+		}
+
+		timeStamp := getLastLogTimeStamp(logs)
+		if timeStamp != "" {
+			lastLogTimeStamp = timeStamp
+		}
+
+		if lastLogTimeStamp != lastSentLogTimeStamp && lastLogTimeStamp != "" {
+			lastSentLogTimeStamp = lastLogTimeStamp
+			api.runtime.Events.Emit("container:log:new", logs)
+		}
+	}
 }
