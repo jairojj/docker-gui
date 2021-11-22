@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -194,7 +193,23 @@ func (api *Api) AttachToContainerShell(containerId string) {
 	}
 	defer out.Close()
 
-	go io.Copy(os.Stdout, out.Reader)
+	go func() {
+		for {
+			var output []byte
+			_, err := out.Reader.Read(output)
+			if err != nil {
+				api.logger.Errorf("Could not read output, error: %e", err.Error())
+				cancel()
+				return
+			}
+
+			if output == `/n` {
+				continue
+			}
+			api.logger.Debugf("CONTAINER OUTPUT: %s: /n", string(output))
+		}
+
+	}()
 
 	go func() {
 		for {
